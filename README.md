@@ -1,5 +1,11 @@
 # dsh-word-editor
 
+[![npm version](https://img.shields.io/npm/v/@xd-hhz/dsh-word-editor.svg)](https://www.npmjs.com/package/@xd-hhz/dsh-word-editor)
+[![npm downloads](https://img.shields.io/npm/dm/@xd-hhz/dsh-word-editor.svg)](https://www.npmjs.com/package/@xd-hhz/dsh-word-editor)
+[![CI](https://github.com/XD-HHZ/dsh-word-editor/actions/workflows/ci.yml/badge.svg)](https://github.com/XD-HHZ/dsh-word-editor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DSH web plugin](https://img.shields.io/badge/DSH-web%20plugin-4C6EF5.svg)](https://github.com/deepseek-ai/deepseek-harness)
+
 在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（DSH）的右侧栏「文档」标签页里**直接打开、编辑并保存 `.docx`** 的 Web 插件。
 
 不需要安装 Word，也不需要额外的文档服务：浏览器负责解析与重建 docx，主机半负责字节精确落盘。
