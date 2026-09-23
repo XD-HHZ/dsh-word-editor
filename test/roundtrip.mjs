@@ -3,49 +3,13 @@
  *
  * The bundle is loaded the way the browser module table loads it, then the pure
  * parse ⇄ emit path is exercised directly through the `__internals` seam. This is
- * the regression net for the two bugs that made edits vanish or formatting bleed:
- * a baseline taken from the current content, and paragraphs rebuilt from scratch.
+ * the regression net for the bugs that made edits vanish or formatting bleed:
+ * a baseline taken from the current content, paragraphs rebuilt from scratch,
+ * and formatting-only edits that were never detected as changes.
  */
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
-import vm from 'node:vm'
+import { loadInternals, fakeDomFor } from './harness.mjs'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const clientPath = join(here, '..', 'lib', 'client.js')
-
-const fakeReact = {
-  createElement: (...args) => ({ type: args[0], props: args[1] }),
-  useState: (initial) => [initial, () => {}],
-  useEffect: () => {},
-  useRef: (initial) => ({ current: initial })
-}
-
-let definition
-const sandbox = {
-  window: { __ModuleLoader__: { load: (value) => { definition = value } } },
-  require: (specifier) => {
-    if (specifier === 'react') return fakeReact
-    throw new Error('unexpected require: ' + specifier)
-  },
-  fetch: () => Promise.resolve({ json: () => Promise.resolve({ ok: false }) }),
-  console,
-  TextEncoder,
-  TextDecoder,
-  Blob,
-  Response,
-  DecompressionStream,
-  CompressionStream,
-  btoa: (value) => Buffer.from(value, 'binary').toString('base64'),
-  atob: (value) => Buffer.from(value, 'base64').toString('binary'),
-  setTimeout,
-  clearInterval,
-  setInterval,
-  URL
-}
-
-vm.runInContext(readFileSync(clientPath, 'utf8'), vm.createContext(sandbox), { filename: 'client.js' })
-const internals = definition.factory(sandbox.require).__internals
+const internals = loadInternals()
 if (internals === undefined) throw new Error('bundle exposes no __internals seam')
 
 const DOC = [
@@ -99,8 +63,9 @@ function collect(index, runs, overrides = {}) {
     orig
   )
 }
+/** A copy of a block's runs as the editor's DOM reports them, formatting included. */
 function textRuns(block) {
-  return block.runs.map((run) => ({ text: run.text, fmt: { b: run.fmt.b, i: run.fmt.i, u: run.fmt.u } }))
+  return block.runs.map((run) => ({ text: run.text, fmt: { ...run.fmt } }))
 }
 
 // ── 2. edit text in the second run: pPr and the untouched run survive ─────────
@@ -197,6 +162,101 @@ function textRuns(block) {
     !html.includes('Red<br>'),
     html
   )
+}
+
+// ── 10. font size and colour: shown, settable, clearable, never lost ─────────
+{
+  // The surface has to show the document's own size/colour, or it lies about the text.
+  const html = internals.blocksToHtml([parsed.blocks[P2]])
+  contains('surface HTML: run size rendered', html, 'font-size:14pt')
+  contains('surface HTML: run colour rendered', html, 'color:#FF0000')
+
+  // Changing only the size must count as a change, exactly like bold-only.
+  const sized = textRuns(parsed.blocks[P2])
+  sized[1].fmt.sz = 24
+  const sizedOut = internals.documentXmlFromBlocks(DOC, [collect(P2, sized)], parsed.sectPrXml)
+  contains('size-only edit: sz written', sizedOut, '<w:sz w:val="24"/>')
+  check('size-only edit: detected', sizedOut !== parsed.blocks[P2].origXml, 'emitted unchanged')
+
+  // Changing only the colour must too.
+  const coloured = textRuns(parsed.blocks[P2])
+  coloured[1].fmt.color = '00FF00'
+  const colouredOut = internals.documentXmlFromBlocks(DOC, [collect(P2, coloured)], parsed.sectPrXml)
+  contains('colour-only edit: color written', colouredOut, '<w:color w:val="00FF00"/>')
+
+  // Setting size and colour on a run that had no rPr: schema order is color, then sz.
+  const fresh = internals.withBaseline(
+    { kind: 'p', id: -1, style: 'Normal', numbered: false, runs: [{ text: 'plain', fmt: { b: false, i: false, u: false, sz: 21, color: '3366CC' } }] },
+    undefined
+  )
+  const freshOut = internals.documentXmlFromBlocks(DOC, [fresh], parsed.sectPrXml)
+  contains('new run rPr: color before sz (schema order)', freshOut, '<w:rPr><w:color w:val="3366CC"/><w:sz w:val="21"/></w:rPr>')
+
+  // Clearing asks for removal explicitly; the colour around it stays.
+  const cleared = textRuns(parsed.blocks[P2])
+  cleared[0].fmt = { b: false, i: false, u: false, sz: undefined, color: 'FF0000', szClear: true }
+  const clearedOut = internals.documentXmlFromBlocks(DOC, [collect(P2, cleared)], parsed.sectPrXml)
+  check('clear size: sz removed', !clearedOut.includes('<w:sz'), clearedOut.match(/<w:rPr>.*?<\/w:rPr>/)?.[0])
+  contains('clear size: colour kept', clearedOut, '<w:color w:val="FF0000"/>')
+
+  // A run whose size the collector could not state must keep the document's own size:
+  // "not stated" is not "delete it".
+  const unstated = textRuns(parsed.blocks[P2])
+  unstated[0].text = 'Redder'
+  unstated[0].fmt = { b: false, i: false, u: false }
+  const unstatedOut = internals.documentXmlFromBlocks(DOC, [collect(P2, unstated)], parsed.sectPrXml)
+  contains('unstated size: document size survives a text edit', unstatedOut, '<w:sz w:val="28"/>')
+  contains('unstated colour: document colour survives a text edit', unstatedOut, '<w:color w:val="FF0000"/>')
+
+  // The collector reads the surface's own markup back into run formatting.
+  const fakeText = (value) => ({ nodeType: 3, nodeValue: value, childNodes: [] })
+  const fakeElement = (tag, attrs, children) => ({
+    nodeType: 1,
+    tagName: tag.toUpperCase(),
+    childNodes: children,
+    getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null),
+  })
+  const wrapped = fakeElement('p', {}, [
+    fakeElement('span', { style: 'font-size:10.5pt;color:#3366cc' }, [fakeText('styled')]),
+    fakeText(' plain'),
+    fakeElement('span', { style: 'color: rgb(255, 0, 0)' }, [fakeText(' rgb')]),
+    fakeElement('span', { 'data-docx-reset': 'sz,color' }, [fakeText(' reset')]),
+  ])
+  const collected = internals.collectRuns(wrapped)
+  check('collector: one run per formatted stretch', collected.length === 4, 'runs: ' + JSON.stringify(collected.map((run) => run.text)))
+  check('collector: half-point size from pt', collected[0].fmt.sz === 21, JSON.stringify(collected[0].fmt))
+  check('collector: colour upper-cased', collected[0].fmt.color === '3366CC', JSON.stringify(collected[0].fmt))
+  check('collector: rgb() colour', collected[2].fmt.color === 'FF0000', JSON.stringify(collected[2]))
+  check('collector: reset clears size and colour', collected[3].fmt.sz === undefined && collected[3].fmt.color === undefined, JSON.stringify(collected[3]))
+  // What Word actually writes: rFonts, colour, w:sz AND w:szCs for complex script text.
+  const WORD_LIKE = [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n',
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>',
+    '<w:p><w:r><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/><w:color w:val="FF0000"/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr><w:t>Red</w:t></w:r></w:p>',
+    '<w:p><w:r><w:rPr><w:color w:val="auto"/><w:sz w:val="21"/></w:rPr><w:t>Auto</w:t></w:r></w:p>',
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>',
+    '</w:body></w:document>',
+  ].join('')
+  const wordParsed = internals.blocksFromDocumentXml(WORD_LIKE)
+  check('Word rPr: w:sz read as half-points', wordParsed.blocks[0].runs[0].fmt.sz === 28, JSON.stringify(wordParsed.blocks[0].runs[0].fmt))
+  check('Word rPr: colour read', wordParsed.blocks[0].runs[0].fmt.color === 'FF0000', JSON.stringify(wordParsed.blocks[0].runs[0].fmt))
+  check('Word rPr: w:color val="auto" stays inherited', wordParsed.blocks[1].runs[0].fmt.color === undefined, JSON.stringify(wordParsed.blocks[1].runs[0].fmt))
+  check('Word rPr: half-point size read', wordParsed.blocks[1].runs[0].fmt.sz === 21, JSON.stringify(wordParsed.blocks[1].runs[0].fmt))
+
+  // The no-op save has to be byte-exact for that shape too.
+  const wordDom = internals.collectEditorBlocks(fakeDomFor(internals, wordParsed), { blocks: wordParsed.blocks })
+  check(
+    'Word rPr: surface round trip is byte-exact',
+    internals.saveDocumentXml(WORD_LIKE, wordParsed.blocks, wordDom, wordParsed.sectPrXml) === WORD_LIKE
+  )
+
+  // Resizing keeps the font and colour, and moves w:szCs together with w:sz.
+  const resized = { ...wordParsed.blocks[0], runs: [{ text: 'Red', fmt: { b: false, i: false, u: false, sz: 24, color: 'FF0000' } }] }
+  const resizedOut = internals.documentXmlFromBlocks(WORD_LIKE, [resized], wordParsed.sectPrXml)
+  contains('resize: w:sz updated', resizedOut, '<w:sz w:val="24"/>')
+  contains('resize: w:szCs follows', resizedOut, '<w:szCs w:val="24"/>')
+  contains('resize: font kept', resizedOut, '<w:rFonts w:ascii="Calibri" w:hAnsi="Calibri"/>')
+  contains('resize: colour kept', resizedOut, '<w:color w:val="FF0000"/>')
 }
 
 console.log('')

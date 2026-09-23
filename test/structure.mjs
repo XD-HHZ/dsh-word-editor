@@ -9,7 +9,7 @@
  *
  * Usage: node test/structure.mjs
  */
-import { loadInternals, createChecker } from './harness.mjs'
+import { loadInternals, createChecker, fakeDomFor, fakeElement, fakeText } from './harness.mjs'
 import { TABLE, MIXED, BOOKMARKED } from './fixtures.mjs'
 
 const internals = loadInternals()
@@ -143,38 +143,7 @@ for (const [label, source] of [['table', TABLE], ['mixed', MIXED]]) {
 // builds it, so "the editor cannot lose what it does not render" is tested end to
 // end rather than assumed.
 {
-  const fakeText = (value) => ({ nodeType: 3, nodeValue: value, textContent: value, childNodes: [] })
-  const fakeElement = (tag, attrs, children) => {
-    const list = children || []
-    return {
-      nodeType: 1,
-      tagName: tag.toUpperCase(),
-      attributes: attrs || {},
-      childNodes: list,
-      textContent: list.map((child) => child.textContent).join(''),
-      getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attrs || {}, name) ? attrs[name] : null),
-      querySelectorAll: () => [],
-    }
-  }
-
-  /** Build the DOM the surface would render for a parsed document. */
-  const surfaceFor = (parsed) => {
-    const children = []
-    for (const block of parsed.blocks) {
-      if (block.kind !== 'p') {
-        if (block.name === 'tbl') children.push(fakeElement('table', { 'data-docx-table': '1', contenteditable: 'false' }, []))
-        continue
-      }
-      const attrs = { 'data-block-id': String(block.id), 'data-docx-style': block.style }
-      if (block.protected === true) {
-        attrs['data-docx-protected'] = '1'
-        attrs.contenteditable = 'false'
-      }
-      const runs = block.runs.map((run) => fakeText(run.text))
-      children.push(fakeElement('p', attrs, runs.length === 0 ? [fakeElement('br', {}, [])] : runs))
-    }
-    return fakeElement('div', {}, children)
-  }
+  const surfaceFor = (parsed) => fakeDomFor(internals, parsed)
 
   for (const [label, source] of [['table', TABLE], ['mixed', MIXED]]) {
     const parsed = internals.blocksFromDocumentXml(source)
@@ -201,6 +170,33 @@ for (const [label, source] of [['table', TABLE], ['mixed', MIXED]]) {
     check('new paragraph did not replace a neighbour', saved.includes('<w:t>Hello</w:t>'), '')
     check('new paragraph did not drop the table', saved.includes('<w:tbl>'), '')
   }
+}
+
+// ── 8. the toolbar may only restyle a selection inside ONE editable block ───
+{
+  const node = (attrs, parent) => ({
+    nodeType: 1,
+    tagName: 'SPAN',
+    parentNode: parent === undefined ? null : parent,
+    getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attrs, name) ? attrs[name] : null),
+  })
+  const paragraph = node({ 'data-block-id': '3' })
+  const otherParagraph = node({ 'data-block-id': '4' })
+  const protectedParagraph = node({ 'data-docx-protected': '1', contenteditable: 'false' })
+  const tableCell = node({ 'data-docx-table': '1' })
+
+  const inside = node({ style: 'font-size:14pt' }, paragraph)
+  const insideOther = node({}, otherParagraph)
+  const insideProtected = node({}, protectedParagraph)
+  const insideTableCell = node({}, tableCell)
+
+  check('selection policy: a span inside a paragraph is editable', internals.blockOfNode(inside).editable === true)
+  check('selection policy: both ends in the same paragraph', internals.blockOfNode(inside).block === internals.blockOfNode(node({}, paragraph)).block)
+  check('selection policy: another paragraph is a different block', internals.blockOfNode(inside).block !== internals.blockOfNode(insideOther).block)
+  check('selection policy: read-only paragraph refuses', internals.blockOfNode(insideProtected).editable === false)
+  check('selection policy: a detached node refuses', internals.blockOfNode(node({})).editable === false)
+  // A table cell is inside the read-only table, so it must refuse as well.
+  check('selection policy: table cell refuses', internals.blockOfNode(insideTableCell).editable === false)
 }
 
 console.log('')

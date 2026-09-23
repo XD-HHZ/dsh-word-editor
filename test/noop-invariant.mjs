@@ -11,7 +11,7 @@
  * Usage: node test/noop-invariant.mjs <path-to.docx>
  */
 import { readFileSync } from 'node:fs'
-import { loadInternals, documentXmlOf } from './harness.mjs'
+import { loadInternals, documentXmlOf, fakeDomFor } from './harness.mjs'
 
 const docxPath = process.argv[2]
 if (docxPath === undefined) {
@@ -41,23 +41,36 @@ const collected = parsed.blocks
 
 const emitted = internals.saveDocumentXml(source, parsed.blocks, collected, parsed.sectPrXml)
 
+// The same thing again, but this time the paragraphs come out of the real collector
+// driven by the DOM the surface renders -- so a run whose size or colour the surface
+// cannot reproduce shows up here as a byte difference.
+const fromDom = internals.collectEditorBlocks(fakeDomFor(internals, parsed), { blocks: parsed.blocks })
+const emittedFromDom = internals.saveDocumentXml(source, parsed.blocks, fromDom, parsed.sectPrXml)
+
 const paragraphs = parsed.blocks.filter((block) => block.kind === 'p')
 const protectedCount = paragraphs.filter((block) => block.protected === true).length
 const others = parsed.blocks.filter((block) => block.kind !== 'p')
 const lost = others.filter((block) => !emitted.includes(block.xml))
+const formatted = paragraphs.reduce(
+  (count, block) => count + block.runs.filter((run) => run.fmt.sz !== undefined || run.fmt.color !== undefined).length,
+  0
+)
 
 console.log('file            :', docxPath)
 console.log('document.xml    :', source.length, 'chars ->', emitted.length, 'chars')
 console.log('paragraphs      :', paragraphs.length, '(' + protectedCount + ' read-only)')
+console.log('sized/coloured  :', formatted, 'runs')
 console.log('other children  :', others.length, '(emitted verbatim)')
 console.log('declaration kept:', emitted.startsWith('<?xml'))
+console.log('surface round   :', emittedFromDom === source ? 'byte-exact' : 'DIFFERS')
 
-if (emitted === source) {
-  console.log('NO-OP INVARIANT OK (byte-for-byte)')
-} else if (lost.length > 0) {
-  console.log('NO-OP INVARIANT FAILED: dropped ' + lost.map((block) => block.name).join(', '))
-  process.exit(1)
-} else {
-  console.log('NO-OP INVARIANT FAILED: document.xml was rewritten')
+if (emitted !== source) {
+  if (lost.length > 0) console.log('NO-OP INVARIANT FAILED: dropped ' + lost.map((block) => block.name).join(', '))
+  else console.log('NO-OP INVARIANT FAILED: document.xml was rewritten')
   process.exit(1)
 }
+if (emittedFromDom !== source) {
+  console.log('NO-OP INVARIANT FAILED: the surface does not reproduce the document')
+  process.exit(1)
+}
+console.log('NO-OP INVARIANT OK (byte-for-byte, including through the surface)')

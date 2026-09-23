@@ -96,3 +96,69 @@ export function createChecker() {
   }
   return { check, state }
 }
+
+// ── a DOM-shaped surface, without a browser ──────────────────────────────────
+
+export function fakeText(value) {
+  return { nodeType: 3, nodeValue: value, textContent: value, childNodes: [] }
+}
+
+export function fakeElement(tag, attrs, children) {
+  const list = children || []
+  return {
+    nodeType: 1,
+    tagName: tag.toUpperCase(),
+    attributes: attrs || {},
+    childNodes: list,
+    textContent: list.map((child) => child.textContent).join(''),
+    getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attrs || {}, name) ? attrs[name] : null),
+    querySelectorAll: () => [],
+  }
+}
+
+/**
+ * Build the DOM the editor's surface renders for a parsed document: one node per
+ * editable paragraph carrying its block id, the same wrapper order blocksToHtml
+ * emits (inline style span, then u/strong/em), read-only markers on protected
+ * paragraphs, and a read-only table for a table.
+ *
+ * Driving the real collector and the real save path with this is what makes the
+ * "surface ⇄ document" round trip testable headlessly -- and it is deliberately
+ * built from the same run formatting, so a size or colour the surface cannot show
+ * again shows up as a byte difference instead of passing silently.
+ */
+export function fakeDomFor(internals, parsed) {
+  const runNodes = (run) => {
+    const css = internals.runStyleCss(run.fmt)
+    const nodes = []
+    String(run.text).split('\n').forEach((line, index) => {
+      if (index > 0) nodes.push(fakeElement('br', {}, []))
+      if (line === '') return
+      let node = fakeText(line)
+      if (css !== '') node = fakeElement('span', { style: css }, [node])
+      if (run.fmt.u) node = fakeElement('u', {}, [node])
+      if (run.fmt.b) node = fakeElement('strong', {}, [node])
+      if (run.fmt.i) node = fakeElement('em', {}, [node])
+      nodes.push(node)
+    })
+    return nodes
+  }
+
+  const children = []
+  for (const block of parsed.blocks) {
+    if (block.kind !== 'p') {
+      if (block.name === 'tbl')
+        children.push(fakeElement('table', { 'data-docx-table': '1', contenteditable: 'false' }, []))
+      continue
+    }
+    const attrs = { 'data-block-id': String(block.id), 'data-docx-style': block.style }
+    if (block.numbered === true) attrs['data-docx-list'] = '1'
+    if (block.protected === true) {
+      attrs['data-docx-protected'] = '1'
+      attrs.contenteditable = 'false'
+    }
+    const nodes = block.runs.flatMap(runNodes)
+    children.push(fakeElement('p', attrs, nodes.length === 0 ? [fakeElement('br', {}, [])] : nodes))
+  }
+  return fakeElement('div', {}, children)
+}
