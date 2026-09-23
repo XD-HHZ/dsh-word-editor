@@ -130,6 +130,35 @@ npm run smoke    # 用假模块表加载 bundle，校验 apply/inject 与两处�
 1. **bundle 里 `__ModuleLoader__.load({ id })` 必须等于 `package.json` 的 `name`**（启动图按包名请求 `<name>/client.js`，模块表按这个 id 注册）。`npm run smoke` 会断言这一点；
 2. **`package.json` 的 `name` 决定了 patch 行里的写法**，改名后要同步改 `cordis.patch.yml`（并给 `@` 开头的名字加引号）。
 
+### 让运行中的插件就是你的仓库
+
+**不要直接改 `node_modules` 里的文件**——下一次 `pnpm install` 会静默覆盖。把安装位置换成指向仓库的链接（Windows 用 junction，macOS/Linux 用 `ln -s`，或 pnpm 的 `link:` 协议）：
+
+```powershell
+# Windows（junction 不需要管理员权限）
+Remove-Item "$env:USERPROFILE\.dsh\profiles\node_modules\@xd-hhz\dsh-word-editor" -Recurse -Force
+New-Item -ItemType Junction `
+  -Path   "$env:USERPROFILE\.dsh\profiles\node_modules\@xd-hhz\dsh-word-editor" `
+  -Target "<你的仓库绝对路径>"
+```
+
+```bash
+# 或者用 pnpm 的 link: 协议（在 profile 里执行，保证是符号链接，装依赖也不会被换掉）
+cd ~/.dsh/profiles/web && pnpm add link:<你的仓库绝对路径>
+```
+
+之后的开发环路：
+
+| 动作 | 生效方式 |
+| --- | --- |
+| 改 `lib/client.js`（浏览器半） | 刷新页面即可（无构建步骤） |
+| 改 `lib/index.js`（主机半） | profile 的 `patchReload: live` 会重启该行 |
+| `git pull` | 等于更新运行中的插件 |
+| `git checkout .` | 回滚 |
+| 发布 | `npm version patch && git push --follow-tags && npm publish` |
+
+注意：DSH 的客户端 HMR（`pnpm run dev:web`）只服务 DSH 自身源码树的重建，不覆盖手写 bundle，因此浏览器半的改动需要**刷新页面**；另外别移动或删除被链接的仓库目录，否则链接悬空、插件会加载失败（移动后重新指向即可）。
+
 ## 许可
 
 MIT，见 [LICENSE](LICENSE)。
