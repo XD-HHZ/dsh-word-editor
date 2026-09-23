@@ -1,0 +1,8 @@
+# Normalise line endings to LF in the repository so a Windows checkout and a
+# Linux/macOS checkout produce identical diffs. `lib/client.js` in particular is
+# a served artifact: CRLF would change its bytes and its bundle revision.
+* text=auto eol=lf
+
+*.docx binary
+*.png binary
+*.jpg binary
