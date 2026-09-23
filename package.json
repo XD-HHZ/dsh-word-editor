@@ -1,5 +1,5 @@
 {
-  "name": "@XD-HHZ/dsh-word-editor",
+  "name": "@xd-hhz/dsh-word-editor",
   "version": "1.0.0",
   "description": "Open, edit and save .docx documents in the DeepSeek Harness right-sidebar document tab",
   "license": "MIT",

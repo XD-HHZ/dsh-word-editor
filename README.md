@@ -37,7 +37,7 @@
 ```bash
 mkdir -p ~/.dsh/profiles/node_modules/@XD-HHZ
 git clone https://github.com/XD-HHZ/dsh-word-editor.git \
-  ~/.dsh/profiles/node_modules/@XD-HHZ/dsh-word-editor
+  ~/.dsh/profiles/node_modules/@xd-hhz/dsh-word-editor
 ```
 
 ```yaml
@@ -45,7 +45,7 @@ git clone https://github.com/XD-HHZ/dsh-word-editor.git \
 # 注意：包名以 @ 开头，在 YAML 里必须加引号（@ 是保留指示符）
 - insert:
     - id: ui-word-editor
-      name: '@XD-HHZ/dsh-word-editor'
+      name: '@xd-hhz/dsh-word-editor'
 ```
 
 保存后 DSH 会**热加载**这一行（profile 的 `patchReload: live`），然后**刷新浏览器页面**。
@@ -58,12 +58,12 @@ git clone https://github.com/XD-HHZ/dsh-word-editor.git \
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add @XD-HHZ/dsh-word-editor
+pnpm add @xd-hhz/dsh-word-editor
 # 或直接从 GitHub 装：
 pnpm add github:XD-HHZ/dsh-word-editor
 ```
 
-patch 行同上（`name: '@XD-HHZ/dsh-word-editor'`）。
+patch 行同上（`name: '@xd-hhz/dsh-word-editor'`）。
 
 ### ❌ 不要用 `file:` URL 命名这一行
 
@@ -91,7 +91,7 @@ curl http://127.0.0.1:3080/word-editor/ping
 
 ### 更新
 
-方式 A：`cd ~/.dsh/profiles/node_modules/@XD-HHZ/dsh-word-editor && git pull`，然后刷新页面；只改主机半时 patch 热加载也会生效。
+方式 A：`cd ~/.dsh/profiles/node_modules/@xd-hhz/dsh-word-editor && git pull`，然后刷新页面；只改主机半时 patch 热加载也会生效。
 
 ## 使用
 
