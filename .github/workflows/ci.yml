@@ -37,6 +37,11 @@ jobs:
       - name: Host half route test
         run: npm run host
 
+      # The data-loss suite: tables, hyperlinks, images, fields, bookmarks and
+      # content controls must survive open + save, unedited and edited alike.
+      - name: Document structure tests
+        run: npm run structure
+
       - name: Package manifest sanity
         run: |
           node -e "

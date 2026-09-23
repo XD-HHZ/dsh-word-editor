@@ -52,6 +52,7 @@
     "smoke": "node smoke-client.mjs",
     "host": "node test/host-ping.mjs",
     "roundtrip": "node test/roundtrip.mjs",
-    "test": "npm run check && npm run smoke && npm run host && npm run roundtrip"
+    "structure": "node test/structure.mjs",
+    "test": "npm run check && npm run smoke && npm run host && npm run roundtrip && npm run structure"
   }
 }
