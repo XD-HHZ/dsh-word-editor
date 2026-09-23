@@ -49,6 +49,8 @@
   ],
   "scripts": {
     "check": "node --check lib/index.js && node --check lib/client.js",
-    "smoke": "node smoke-client.mjs"
+    "smoke": "node smoke-client.mjs",
+    "roundtrip": "node test/roundtrip.mjs",
+    "test": "npm run check && npm run smoke && npm run roundtrip"
   }
 }

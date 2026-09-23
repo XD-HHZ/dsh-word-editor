@@ -111,9 +111,12 @@ curl http://127.0.0.1:3080/word-editor/ping
 | ◉ 检查 | 按当前编辑区重新读取（诊断用） |
 | 保存 | 写回原文件，状态栏显示段数、XML 长度与字节数 |
 
+保存时只重写**你真正动过**的段落：没碰的段落按原字节回写，动过的段落继承原有的缩进、对齐、行距与样式，段内没改的文字也保持原格式。
+
 ## 已知边界
 
-- **改动过的段落**按 `pStyle` / `numPr` 重新生成，会丢失该段原有的 `pPr`（缩进、对齐、行距、自定义样式名）；未改动的段落不受影响；
+- **只有改动过的段落会被重写**，其余段落逐字节原样回写。改动过的段落会**继承原有的段落属性 `pPr`**（缩进、对齐、行距、自定义样式都会保留，`pStyle`/`numPr` 只做定点替换），段内**未改动的 run 也逐字节复用**，被改文案的 run 会带上它原来的字符属性（字号、颜色等）；
+- 因此，如果你编辑了包含**非文本内容**的段落（图片、图形、域代码等），该段仍只保留文字——整段不动则完全无损；
 - 表格、图片、页眉页脚、批注、修订、分页符**保留但不参与编辑**；
 - 主机路由按页面给出的路径用 `node:fs` 写入，只校验同源（`Origin`/`Host` 一致），不受 DSH 文件沙箱约束——它是由你安装的本地插件，请自行判断是否可接受；
 - 仅支持 `.docx`（Word 2007+），不支持旧版 `.doc`。
@@ -121,9 +124,24 @@ curl http://127.0.0.1:3080/word-editor/ping
 ## 开发
 
 ```bash
-npm run check    # node --check lib/index.js && node --check lib/client.js
-npm run smoke    # 用假模块表加载 bundle，校验 apply/inject 与两处注册
+npm test              # 下面三个全跑
+npm run check         # node --check lib/index.js && node --check lib/client.js
+npm run smoke         # 用假模块表加载 bundle，校验 apply/inject 与两处注册
+npm run roundtrip     # docx 编解码的无头测试（23 项断言，不需要浏览器）
 ```
+
+`roundtrip` 覆盖的是最容易悄悄坏掉的部分：无改动时逐字节不变、改文案时 `pPr` 与未改动 run 原样保留、**只改格式（比如只加粗、不动文字）也必须被检测到**、样式/列表切换时 `pPr` 是定点修补而不是重建、新段落与空段落的输出形状。
+
+另外还有一个针对**真实 Word 文件**的不变式检查（仓库里没有测试用 docx，所以不进 CI，自己指一个文件跑）：
+
+```bash
+node test/noop-invariant.mjs "D:\\path\\to\\your.docx"
+# document.xml 4212 chars -> 4212 chars
+# 7/7 paragraphs byte-exact
+# NO-OP INVARIANT OK
+```
+
+它做的事就是：解析再原样输出，要求每个段落都与原文逐字节相同。**改编解码层前后都值得跑一次**——任何“顺手规范化一下 XML”的改动都会在这里立刻暴露。
 
 两条硬性约定，改代码时别踩：
 

@@ -25,6 +25,12 @@ jobs:
       - name: Client bundle smoke test
         run: npm run smoke
 
+      # The xmldom-free docx layer, exercised headlessly: byte-exact no-op
+      # round trip, pPr/run property inheritance for edited paragraphs,
+      # formatting-only edit detection, and new-paragraph emission.
+      - name: Docx round trip tests
+        run: npm run roundtrip
+
       - name: Package manifest sanity
         run: |
           node -e "
