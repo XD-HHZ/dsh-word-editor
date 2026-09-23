@@ -97,7 +97,19 @@ curl http://127.0.0.1:3080/word-editor/ping
 
 ### 更新
 
-方式 A：`cd ~/.dsh/profiles/node_modules/@xd-hhz/dsh-word-editor && git pull`，然后刷新页面；只改主机半时 patch 热加载也会生效。
+方式 A：`cd ~/.dsh/profiles/node_modules/@xd-hhz/dsh-word-editor && git pull`，方式 B：`npm update @xd-hhz/dsh-word-editor`。之后分两种情况：
+
+- 只改了**浏览器半**（`lib/client.js`）：刷新页面即可——bundle 是每次从磁盘取的，没有构建步骤；
+- 改了**主机半**（`lib/index.js`）：要让 DSH 重新加载这个插件（最稳是重启；改动 `~/.dsh/profiles/web/cordis.patch.yml` 触发 patch 热加载通常也可以）。
+
+判断主机半是不是新版，看它自报的版本号：
+
+```bash
+curl http://127.0.0.1:3080/word-editor/ping
+# {"ok":true,"version":"1.1.0"}
+```
+
+版本号是运行时从 `package.json` 读的，所以这里能直接看出 `git pull` 有没有真的生效。
 
 ## 使用
 
@@ -124,9 +136,10 @@ curl http://127.0.0.1:3080/word-editor/ping
 ## 开发
 
 ```bash
-npm test              # 下面三个全跑
+npm test              # 下面四个全跑
 npm run check         # node --check lib/index.js && node --check lib/client.js
 npm run smoke         # 用假模块表加载 bundle，校验 apply/inject 与两处注册
+npm run host          # 用假 ctx 驱动 apply，校验路由集合与 ping 自报的版本号
 npm run roundtrip     # docx 编解码的无头测试（23 项断言，不需要浏览器）
 ```
 
