@@ -86,7 +86,7 @@ patch 行同上（`name: '@xd-hhz/dsh-word-editor'`）。
 
 ```bash
 curl http://127.0.0.1:3080/word-editor/ping
-# {"ok":true,"version":"1.0.0"}
+# {"ok":true,"version":"1.1.0"}
 ```
 
 返回该 JSON 说明主机半已挂载；再刷新 `http://127.0.0.1:3080/`，在右侧栏文件树里点开一个 `.docx` 应出现编辑器。
