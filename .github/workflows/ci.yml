@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No install step: the plugin has no dependencies and no build step.
+      - name: Syntax check (host half + client bundle)
+        run: npm run check
+
+      # Loads lib/client.js through a fake __ModuleLoader__/require pair and
+      # asserts apply/inject, both slot registrations, and the hard rule that the
+      # bundle's declared id equals the package name.
+      - name: Client bundle smoke test
+        run: npm run smoke
+
+      - name: Package manifest sanity
+        run: |
+          node -e "
+          const pkg = require('./package.json');
+          const fail = (m) => { console.error(m); process.exit(1) };
+          if (!pkg.dsh || !pkg.dsh.client) fail('package.json must declare dsh.client');
+          if (pkg.dsh.client.platform !== 'web') fail('dsh.client.platform must be web');
+          if (!pkg.exports || !pkg.exports['./client']) fail('package.json must export ./client');
+          if (pkg.publishConfig.access !== 'public') fail('publishConfig.access must be public for a scoped package');
+          console.log('manifest ok:', pkg.name);
+          "

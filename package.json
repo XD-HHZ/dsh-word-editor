@@ -38,6 +38,9 @@
     "type": "git",
     "url": "git+https://github.com/XD-HHZ/dsh-word-editor.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "lib/index.js",
     "lib/client.js",

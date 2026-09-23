@@ -51,7 +51,11 @@ console.log('module definitions loaded:', loaded.length)
 if (loaded.length !== 1) throw new Error('expected exactly one module definition')
 const definition = loaded[0]
 console.log('id:', definition.id)
-if (definition.id !== 'dsh-word-editor') throw new Error('unexpected id')
+
+// The declared module id MUST equal the package name: the boot graph requests
+// `<package name>/client.js` and the module table keys entries by this id.
+const pkgName = JSON.parse(readFileSync(join(here, 'package.json'), 'utf8')).name
+if (definition.id !== pkgName) throw new Error(`bundle id "${definition.id}" must equal the package name "${pkgName}"`)
 
 const exported = definition.factory(sandbox.require)
 console.log('exports keys:', Object.keys(exported).join(','))

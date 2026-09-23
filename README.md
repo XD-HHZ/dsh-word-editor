@@ -14,15 +14,15 @@
 ## 架构
 
 ```
-浏览器半 (lib/client.js)                     主机半 (lib/index.js)
-  __ModuleLoader__ 模块表加载                  cordis 插件（真实 Node 环境）
+浏览器半 (lib/client.js)                       主机半 (lib/index.js)
+  __ModuleLoader__ 模块表加载                    cordis 插件（真实 Node 环境）
   ├ documentPreviews.register(extensions: docx)  ├ node:fs 直接读写二进制
   ├ sidebar.right.tab.document 正文与工具栏       ├ POST /word-editor/read
   └ fetch ─────── /word-editor/* ─────────────►  ├ POST /word-editor/save（写完回读校验）
                                                  └ 同源校验：拒绝跨站写入
 ```
 
-- **没有构建步骤**：`lib/client.js` 是按 DSH 模块表格式手写的 ESM bundle（`window.__ModuleLoader__.load({ id, factory })`），改完直接生效；
+- **没有构建步骤**：`lib/client.js` 是按 DSH 模块表格式手写的 bundle（`window.__ModuleLoader__.load({ id, factory })`），改完直接生效；
 - 浏览器半用 `DecompressionStream` / `CompressionStream` 处理 `deflate-raw`，自实现 zip 读取与 CRC32；
 - 主机半用 `node:fs` 写盘，因此不受 DSH 文本文件服务的限制，字节精确。
 
@@ -35,44 +35,46 @@
 ### 方式 A：克隆进 profile 的 `node_modules`（已实测，推荐）
 
 ```bash
-mkdir -p ~/.dsh/profiles/node_modules
-git clone https://github.com/<你的用户名>/dsh-word-editor.git ~/.dsh/profiles/node_modules/dsh-word-editor
+mkdir -p ~/.dsh/profiles/node_modules/@XD-HHZ
+git clone https://github.com/XD-HHZ/dsh-word-editor.git \
+  ~/.dsh/profiles/node_modules/@XD-HHZ/dsh-word-editor
 ```
 
 ```yaml
 # 编辑 ~/.dsh/profiles/web/cordis.patch.yml
+# 注意：包名以 @ 开头，在 YAML 里必须加引号（@ 是保留指示符）
 - insert:
     - id: ui-word-editor
-      name: dsh-word-editor
+      name: '@XD-HHZ/dsh-word-editor'
 ```
 
 保存后 DSH 会**热加载**这一行（profile 的 `patchReload: live`），然后**刷新浏览器页面**。
 
 > ⚠️ 这个位置在 profile 里执行 `pnpm install` 时可能被裁剪；若你经常动 profile 依赖，用方式 B。
 
-### 方式 B：pnpm 依赖（最抗裁剪，未在本机实测）
+### 方式 B：npm / pnpm 依赖（最抗裁剪）
+
+已发布到 npm 时：
 
 ```bash
 cd ~/.dsh/profiles/web
-pnpm add github:<你的用户名>/dsh-word-editor
+pnpm add @XD-HHZ/dsh-word-editor
+# 或直接从 GitHub 装：
+pnpm add github:XD-HHZ/dsh-word-editor
 ```
 
-```yaml
-- insert:
-    - id: ui-word-editor
-      name: dsh-word-editor
-```
+patch 行同上（`name: '@XD-HHZ/dsh-word-editor'`）。
 
 ### ❌ 不要用 `file:` URL 命名这一行
 
 ```yaml
-# 这样写主机半能挂上，但浏览器半不会被扫描进启动图（docx 编辑器不会出现）
+# 这样写：主机半能起来，但浏览器半不会入启动图 → 界面里不会出现 docx 编辑器
 - insert:
     - id: ui-word-editor
       name: file:///C:/Users/you/plugins/dsh-word-editor/lib/index.js
 ```
 
-DSH 的 client-modules 通过 Node 的模块解析来定位包清单；路径形式的行名解析不到清单，于是这个包不会进入浏览器启动名单。**必须让 row 里写裸包名**，包本身放在 profile 能解析到的 `node_modules` 下。
+实测结论：DSH 的 client-modules 用 Node 模块解析定位包清单，**路径形式的行名解析不到 `package.json`**，于是这个包不会进入浏览器启动名单（还会把扫描缓存指向旧路径）。**必须让 row 写裸包名**，包本身放在 profile 能解析到的 `node_modules` 下。
 
 ### 验证安装
 
@@ -86,6 +88,10 @@ curl http://127.0.0.1:3080/word-editor/ping
 ### 卸载
 
 删除 `cordis.patch.yml` 里的那段 insert，删掉克隆目录，重启 DSH。
+
+### 更新
+
+方式 A：`cd ~/.dsh/profiles/node_modules/@XD-HHZ/dsh-word-editor && git pull`，然后刷新页面；只改主机半时 patch 热加载也会生效。
 
 ## 使用
 
@@ -109,12 +115,14 @@ curl http://127.0.0.1:3080/word-editor/ping
 ## 开发
 
 ```bash
-node --check lib/index.js     # 主机半语法
-node --check lib/client.js    # 浏览器半语法
-node smoke-client.mjs         # 用假模块表加载 bundle，校验 apply/inject 与两处注册
+npm run check    # node --check lib/index.js && node --check lib/client.js
+npm run smoke    # 用假模块表加载 bundle，校验 apply/inject 与两处注册
 ```
 
-改完 `lib/*.js` 后，方式 A 的安装无需任何构建：刷新页面即可（若只改了主机半，patch 热加载后会重启该行）。
+两条硬性约定，改代码时别踩：
+
+1. **bundle 里 `__ModuleLoader__.load({ id })` 必须等于 `package.json` 的 `name`**（启动图按包名请求 `<name>/client.js`，模块表按这个 id 注册）。`npm run smoke` 会断言这一点；
+2. **`package.json` 的 `name` 决定了 patch 行里的写法**，改名后要同步改 `cordis.patch.yml`（并给 `@` 开头的名字加引号）。
 
 ## 许可
 
