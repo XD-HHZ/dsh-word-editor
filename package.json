@@ -1,6 +1,6 @@
 {
   "name": "@xd-hhz/dsh-word-editor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Open, edit and save .docx documents in the DeepSeek Harness right-sidebar document tab",
   "license": "MIT",
   "type": "module",
@@ -50,7 +50,8 @@
   "scripts": {
     "check": "node --check lib/index.js && node --check lib/client.js",
     "smoke": "node smoke-client.mjs",
+    "host": "node test/host-ping.mjs",
     "roundtrip": "node test/roundtrip.mjs",
-    "test": "npm run check && npm run smoke && npm run roundtrip"
+    "test": "npm run check && npm run smoke && npm run host && npm run roundtrip"
   }
 }

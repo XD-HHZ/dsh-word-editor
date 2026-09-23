@@ -31,6 +31,12 @@ jobs:
       - name: Docx round trip tests
         run: npm run roundtrip
 
+      # Imports lib/index.js the way the loader does, drives apply() with a fake
+      # context, and calls the registered routes: route set, effect ownership,
+      # and that /ping reports the version from package.json.
+      - name: Host half route test
+        run: npm run host
+
       - name: Package manifest sanity
         run: |
           node -e "
